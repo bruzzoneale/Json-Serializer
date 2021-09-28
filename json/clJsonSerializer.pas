@@ -26,7 +26,9 @@ unit clJsonSerializer;
 interface
 
 uses
-  System.Classes, System.SysUtils, System.Generics.Collections, System.Rtti, System.TypInfo, clJsonSerializerBase, clJsonParser;
+  System.Classes, System.SysUtils, System.StrUtils, System.DateUtils,
+  System.Generics.Collections, System.Rtti, System.TypInfo,
+  clJsonSerializerBase, clJsonParser;
 
 type
   TclJsonTypeNameMapAttributeList = TArray<TclJsonTypeNameMapAttribute>;

@@ -26,7 +26,7 @@ unit clJsonParser;
 interface
 
 uses
-  System.Classes, System.SysUtils, System.Contnrs;
+  System.Classes, System.SysUtils, System.Generics.Collections;
 
 type
   EclJSONError = class(Exception)
@@ -41,6 +41,7 @@ type
   TclJSONPair = class;
   TclJSONObject = class;
   TclJSONArray = class;
+  Widestring = type string;
 
   TclJSONBase = class
   private
@@ -125,7 +126,7 @@ type
 
   TclJSONArray = class(TclJSONBase)
   private
-    FItems: TObjectList;
+    FItems: TObjectList<TclJSONBase>;
 
     function GetCount: Integer;
     function GetItem(Index: Integer): TclJSONBase;
@@ -147,7 +148,7 @@ type
 
   TclJSONObject = class(TclJSONBase)
   private
-    FMembers: TObjectList;
+    FMembers: TObjectList<TclJSONPair>;
 
     function GetCount: Integer;
     function GetMember(Index: Integer): TclJSONPair;
@@ -850,7 +851,7 @@ end;
 constructor TclJSONObject.Create;
 begin
   inherited Create();
-  FMembers := TObjectList.Create(True);
+  FMembers := TObjectList<TclJSONPair>.Create(True);
 end;
 
 destructor TclJSONObject.Destroy;
@@ -1049,7 +1050,7 @@ end;
 constructor TclJSONArray.Create;
 begin
   inherited Create();
-  FItems := TObjectList.Create(True);
+  FItems := TObjectList<TclJSONBase>.Create(True);
 end;
 
 destructor TclJSONArray.Destroy;
@@ -1065,7 +1066,7 @@ end;
 
 function TclJSONArray.GetItem(Index: Integer): TclJSONBase;
 begin
-  Result := TclJSONBase(FItems[Index]);
+  Result := FItems[Index];
 end;
 
 function TclJSONArray.GetObject(Index: Integer): TclJSONObject;
