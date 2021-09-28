@@ -33,6 +33,8 @@
    Now all public property are serializable by default without the necessity of define always the attribute
    Fixed Float property serialization
    Added TclJsonPrivate attribute to avoid property serialization
+   28/09/2021
+   Addd TclJsonPrivate attribute Implementation also for Array and TObject property types
 }
 
 
@@ -66,12 +68,12 @@ type
     function GetObjectClass(ATypeNameAttrs: TclJsonTypeNameMapAttributeList; AJsonObject: TclJSONObject): TRttiType;
 
     procedure SerializeArray(AProperty: TRttiProperty; AObject: TObject;
-      Attribute: TclJsonPropertyAttribute; AJson: TclJsonObject);
+      Attribute: TclJsonPropertyAttribute; AJson: TclJsonObject; ARequired: Boolean=False);
     procedure DeserializeArray(AProperty: TRttiProperty; AObject: TObject; AJsonArray: TclJSONArray);
 
     function Deserialize(AType: TClass; const AJson: TclJSONObject): TObject; overload;
     function Deserialize(AObject: TObject; const AJson: TclJSONObject): TObject; overload;
-    function Serialize(AObject: TObject): TclJSONObject;
+    function Serialize(AObject: TObject; ARequired: Boolean=False): TclJSONObject;
   public
     function JsonToObject(AType: TClass; const AJson: string): TObject; overload; override;
     function JsonToObject(AObject: TObject; const AJson: string): TObject; overload; override;
@@ -472,7 +474,7 @@ begin
   end;
 end;
 
-function TclJsonSerializer.Serialize(AObject: TObject): TclJSONObject;
+function TclJsonSerializer.Serialize(AObject: TObject; ARequired: Boolean): TclJSONObject;
 var
   ctx: TRttiContext;
   rType: TRttiType;
@@ -484,7 +486,10 @@ var
 begin
   if (AObject = nil) then
   begin
-    Result := nil;
+    if ARequired then
+      Result := TclJSONObject.Create()
+    else
+      Result := nil;
     Exit;
   end;
 
@@ -524,11 +529,11 @@ begin
 
           if (rProp.PropertyType.TypeKind = tkDynArray) then
           begin
-            SerializeArray(rProp, AObject, TclJsonPropertyAttribute(propAttr), Result);
+            SerializeArray(rProp, AObject, TclJsonPropertyAttribute(propAttr), Result, (clRequired in propOptions));
           end else
           if (rProp.PropertyType.TypeKind = tkClass) then
           begin
-            Result.AddMember(TclJsonPropertyAttribute(propAttr).Name, Serialize(rProp.GetValue(AObject).AsObject()));
+            Result.AddMember(TclJsonPropertyAttribute(propAttr).Name, Serialize(rProp.GetValue(AObject).AsObject(), (clRequired in propOptions)));
           end else
           if (rProp.PropertyType.TypeKind in [tkString, tkLString, tkWString, tkUString]) then
           begin
@@ -600,7 +605,7 @@ begin
 end;
 
 procedure TclJsonSerializer.SerializeArray(AProperty: TRttiProperty; AObject: TObject;
-  Attribute: TclJsonPropertyAttribute; AJson: TclJsonObject);
+  Attribute: TclJsonPropertyAttribute; AJson: TclJsonObject; ARequired: Boolean);
 var
   rValue: TValue;
   i: Integer;
@@ -608,7 +613,7 @@ var
 begin
   rValue := AProperty.GetValue(AObject);
 
-  if (rValue.GetArrayLength() > 0) then
+  if (rValue.GetArrayLength() > 0) or ARequired then
   begin
     arr := TclJSONArray.Create();
     AJson.AddMember(Attribute.Name, arr);
