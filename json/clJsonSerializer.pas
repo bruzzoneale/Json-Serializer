@@ -35,6 +35,13 @@ type
 
   TclJsonSerializer = class(TclJsonSerializerBase)
   strict private
+    function GetEncodedDate(aValue: Extended): string;
+    function GetEncodedTime(aValue: Extended): string;
+    function GetEncodedDateTime(aValue: Extended): string;
+    function GetDecodedDate(const aValue: string): TDateTime;
+    function GetDecodedTime(aValue: string): TDateTime;
+    function GetDecodedDateTime(const aValue: string): TDateTime;
+
     procedure GetTypeAttributes(AType: TRttiType; var ATypeNameAttrs: TclJsonTypeNameMapAttributeList);
     procedure GetPropertyAttributes(AProp: TRttiProperty; var APropAttr: TclJsonPropertyAttribute;
       var ARequiredAttr: TclJsonRequiredAttribute);
@@ -60,6 +67,52 @@ resourcestring
 implementation
 
 { TclJsonSerializer }
+
+function TclJsonSerializer.GetDecodedDate(const aValue: string): TDateTime;
+begin
+  if not TryISO8601ToDate(aValue, Result, True) then
+    Result := 0.0
+  else
+    Result := DateOf(Result);
+end;
+
+function TclJsonSerializer.GetDecodedDateTime(const aValue: string): TDateTime;
+begin
+  if not TryISO8601ToDate(aValue, Result, True) then
+    Result := 0.0;
+end;
+
+function TclJsonSerializer.GetDecodedTime(aValue: string): TDateTime;
+begin
+  if Pos('T', aValue) < Low(string) then
+    aValue := '2000-01-01T'+aValue;
+
+  if not TryISO8601ToDate(aValue, Result, True) then
+    Result := 0.0
+  else
+    Result := TimeOf(Result);
+end;
+
+function TclJsonSerializer.GetEncodedDate(aValue: Extended): string;
+begin
+  if aValue = 0.0 then
+    Result := ''
+  else
+    Result := FormatDateTime('yyyy"-"mm"-"dd', aValue);
+end;
+
+function TclJsonSerializer.GetEncodedDateTime(aValue: Extended): string;
+begin
+  if aValue = 0.0 then
+    Result := ''
+  else
+    Result := DateToISO8601(aValue,True);
+end;
+
+function TclJsonSerializer.GetEncodedTime(aValue: Extended): string;
+begin
+  Result := FormatDateTime('hh":"nn":"ss"."zzz', aValue);
+end;
 
 function TclJsonSerializer.GetObjectClass(ATypeNameAttrs: TclJsonTypeNameMapAttributeList; AJsonObject: TclJSONObject): TRttiType;
 var
@@ -136,6 +189,10 @@ begin
         and (AJsonArray.Items[i] is TclJSONBoolean) then
       begin
         rItemValue := TclJSONBoolean(AJsonArray.Items[i]).Value;
+      end else
+      if  (elType.Kind = tkFloat) then
+      begin
+        rItemValue := StrToFloat( AnsiReplaceStr(AJsonArray.Items[i].ValueString,'.', FormatSettings.DecimalSeparator) );
       end else
       begin
         raise EclJsonSerializerError.Create(cUnsupportedDataType);
@@ -283,14 +340,42 @@ begin
           rProp.SetValue(Result, rValue);
         end else
         if (rProp.PropertyType.TypeKind = tkEnumeration)
-          and (rProp.GetValue(Result).TypeInfo = System.TypeInfo(Boolean))
-          and (member.Value is TclJSONBoolean) then
+          and (rProp.GetValue(Result).TypeInfo = System.TypeInfo(Boolean)) then
         begin
-          rValue := TclJSONBoolean(member.Value).Value;
+          if (member.Value is TclJSONBoolean) then
+            rValue := TclJSONBoolean(member.Value).Value
+          else
+            rValue := false;
+
+          rProp.SetValue(Result, rValue);
+        end else
+        if (rProp.PropertyType.TypeKind = tkEnumeration) then
+        begin
+;
+          rProp.SetValue(Result, TValue.FromOrdinal( rProp.PropertyType.Handle, StrToInt(member.ValueString)));
+        end else
+        if SameText(rProp.PropertyType.Name, 'TDate') then
+        begin
+          rValue := GetDecodedDate(member.ValueString);
+          rProp.SetValue(Result, rValue);
+        end else
+        if SameText(rProp.PropertyType.Name, 'TTime') then
+        begin
+          rValue := GetDecodedTime(member.ValueString);
+          rProp.SetValue(Result, rValue);
+        end else
+        if SameText(rProp.PropertyType.Name, 'TDateTime') then
+        begin
+          rValue := GetDecodedDateTime(member.ValueString);
+          rProp.SetValue(Result, rValue);
+        end else
+        if (rProp.PropertyType.TypeKind = tkFloat) then
+        begin
+          rValue := StrToFloat( AnsiReplaceStr(member.ValueString,'.', FormatSettings.DecimalSeparator) );
           rProp.SetValue(Result, rValue);
         end else
         begin
-          raise EclJsonSerializerError.Create(cUnsupportedDataType);
+          raise EclJsonSerializerError.Create(cUnsupportedDataType + ' ('+member.Name+')');
         end;
       end;
     end;
@@ -407,6 +492,26 @@ begin
             and (rProp.GetValue(AObject).TypeInfo = System.TypeInfo(Boolean)) then
           begin
             Result.AddBoolean(TclJsonPropertyAttribute(propAttr).Name, rProp.GetValue(AObject).AsBoolean());
+          end else
+          if (rProp.PropertyType.TypeKind = tkEnumeration) then
+          begin
+            Result.AddValue(propAttr.Name, rProp.GetValue(AObject).AsOrdinal.ToString);
+          end else
+          if SameText(rProp.PropertyType.Name, 'TDate') then
+          begin
+            Result.AddString(TclJsonPropertyAttribute(propAttr).Name, GetEncodedDate(rProp.GetValue(AObject).AsExtended));
+          end else
+          if SameText(rProp.PropertyType.Name, 'TTime') then
+          begin
+            Result.AddString(TclJsonPropertyAttribute(propAttr).Name, GetEncodedTime(rProp.GetValue(AObject).AsExtended));
+          end else
+          if SameText(rProp.PropertyType.Name, 'TDateTime') then
+          begin
+            Result.AddString(TclJsonPropertyAttribute(propAttr).Name, GetEncodedDateTime(rProp.GetValue(AObject).AsExtended));
+          end else
+          if (rProp.PropertyType.TypeKind = tkFloat) then
+          begin
+            Result.AddValue(TclJsonPropertyAttribute(propAttr).Name, AnsiReplaceStr(rProp.GetValue(AObject).ToString(),FormatSettings.DecimalSeparator,'.'));
           end else
           begin
             raise EclJsonSerializerError.Create(cUnsupportedDataType);
