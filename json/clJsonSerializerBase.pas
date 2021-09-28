@@ -44,6 +44,8 @@ type
 
   TclJsonRequiredAttribute = class(TCustomAttribute);
 
+  TclJsonPrivateAttribute = class(TCustomAttribute);
+
   TclJsonTypeNameMapAttribute = class(TCustomAttribute)
   strict private
     FPropertyName: string;

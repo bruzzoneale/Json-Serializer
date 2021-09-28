@@ -21,6 +21,21 @@
   along with Json Serializer. If not, see <http://www.gnu.org/licenses/>.
 }
 
+
+{
+   Author: Alessandro Bruzzone
+
+   13/02/2018
+   Added deserialization mapping for float data type properties (native data "Double")
+   22/03/2018
+   Added case of null-boolean value in deserialization
+   03/09/2021
+   Now all public property are serializable by default without the necessity of define always the attribute
+   Fixed Float property serialization
+   Added TclJsonPrivate attribute to avoid property serialization
+}
+
+
 unit clJsonSerializer;
 
 interface
@@ -31,6 +46,9 @@ uses
   clJsonSerializerBase, clJsonParser;
 
 type
+  TclJsonPropertyOption = (clPrivate, clRequired);
+  TclJsonPropertyOptions = set of TclJsonPropertyOption ;
+
   TclJsonTypeNameMapAttributeList = TArray<TclJsonTypeNameMapAttribute>;
 
   TclJsonSerializer = class(TclJsonSerializerBase)
@@ -44,7 +62,7 @@ type
 
     procedure GetTypeAttributes(AType: TRttiType; var ATypeNameAttrs: TclJsonTypeNameMapAttributeList);
     procedure GetPropertyAttributes(AProp: TRttiProperty; var APropAttr: TclJsonPropertyAttribute;
-      var ARequiredAttr: TclJsonRequiredAttribute);
+      var APropertyOptions: TclJsonPropertyOptions);
     function GetObjectClass(ATypeNameAttrs: TclJsonTypeNameMapAttributeList; AJsonObject: TclJSONObject): TRttiType;
 
     procedure SerializeArray(AProperty: TRttiProperty; AObject: TObject;
@@ -288,8 +306,9 @@ var
   rValue: TValue;
   objClass: TClass;
   nonSerializable: Boolean;
-  requiredAttr: TclJsonRequiredAttribute;
   propAttr: TclJsonPropertyAttribute;
+  propOptions: TclJsonPropertyOptions;
+  ownPropAttr: Boolean;
 begin
   Result := AObject;
 
@@ -303,8 +322,27 @@ begin
 
     for rProp in rType.GetProperties() do
     begin
-      GetPropertyAttributes(rProp, propAttr, requiredAttr);
+      if not rProp.IsWritable then
+        Continue;
 
+      GetPropertyAttributes(rProp, propAttr, propOptions);
+
+      if clPrivate in propOptions then
+        Continue;
+
+      // Added all public properties serializable by default
+      if (propAttr = nil) and (rProp.Visibility in [mvPublic, mvPublished]) then
+      begin
+        ownPropAttr := True;
+        if (rProp.PropertyType.TypeKind in [tkString, tkLString, tkWString, tkUString]) then
+          propAttr := TclJsonStringAttribute.Create(rProp.Name)
+        else
+          propAttr := TclJsonPropertyAttribute.Create(rProp.Name);
+      end
+      else
+        ownPropAttr := False;
+
+     try
       if (propAttr <> nil) then
       begin
         nonSerializable := False;
@@ -378,6 +416,10 @@ begin
           raise EclJsonSerializerError.Create(cUnsupportedDataType + ' ('+member.Name+')');
         end;
       end;
+     finally
+       if ownPropAttr then
+         propAttr.Free;
+     end;
     end;
   finally
     ctx.Free();
@@ -390,23 +432,23 @@ begin
 end;
 
 procedure TclJsonSerializer.GetPropertyAttributes(AProp: TRttiProperty; var APropAttr: TclJsonPropertyAttribute;
-  var ARequiredAttr: TclJsonRequiredAttribute);
+  var APropertyOptions: TclJsonPropertyOptions);
 var
   attr: TCustomAttribute;
 begin
   APropAttr := nil;
-  ARequiredAttr := nil;
+  APropertyOptions := [];
 
   for attr in AProp.GetAttributes() do
   begin
     if (attr is TclJsonPropertyAttribute) then
-    begin
       APropAttr := attr as TclJsonPropertyAttribute;
-    end else
+
     if (attr is TclJsonRequiredAttribute) then
-    begin
-      ARequiredAttr := attr as TclJsonRequiredAttribute;
-    end;
+      Include(APropertyOptions, clRequired);
+
+    if (attr is TclJsonPrivateAttribute) then
+      Include(APropertyOptions, clPrivate);
   end;
 end;
 
@@ -436,8 +478,9 @@ var
   rType: TRttiType;
   rProp: TRttiProperty;
   nonSerializable: Boolean;
-  requiredAttr: TclJsonRequiredAttribute;
   propAttr: TclJsonPropertyAttribute;
+  propOptions: TclJsonPropertyOptions;
+  ownPropAttr: Boolean;
 begin
   if (AObject = nil) then
   begin
@@ -454,8 +497,27 @@ begin
       rType := ctx.GetType(AObject.ClassInfo);
       for rProp in rType.GetProperties() do
       begin
-        GetPropertyAttributes(rProp, propAttr, requiredAttr);
+        if not rProp.IsReadable then
+          Continue;
 
+        GetPropertyAttributes(rProp, propAttr, propOptions);
+
+        if clPrivate in propOptions then
+          Continue;
+
+        // Added all public properties serializable by default
+        if (propAttr = nil) and (rProp.Visibility in [mvPublic, mvPublished]) then
+        begin
+          ownPropAttr := True;
+          if (rProp.PropertyType.TypeKind in [tkString, tkLString, tkWString, tkUString]) then
+            propAttr := TclJsonStringAttribute.Create(rProp.Name)
+          else
+            propAttr := TclJsonPropertyAttribute.Create(rProp.Name);
+        end
+        else
+          ownPropAttr := False;
+
+       try
         if (propAttr <> nil) then
         begin
           nonSerializable := False;
@@ -472,7 +534,7 @@ begin
           begin
             if (propAttr is TclJsonStringAttribute) then
             begin
-              if (requiredAttr <> nil) then
+              if clRequired in propOptions then
               begin
                 Result.AddRequiredString(TclJsonPropertyAttribute(propAttr).Name, rProp.GetValue(AObject).AsString());
               end else
@@ -517,6 +579,11 @@ begin
             raise EclJsonSerializerError.Create(cUnsupportedDataType);
           end;
         end;
+
+       finally
+         if ownPropAttr then
+           propAttr.Free;
+       end;
       end;
 
       if (nonSerializable) then
