@@ -34,7 +34,15 @@
    Fixed Float property serialization
    Added TclJsonPrivate attribute to avoid property serialization
    28/09/2021
-   Addd TclJsonPrivate attribute Implementation also for Array and TObject property types
+   Added TclJsonPrivate attribute Implementation also for Array and TObject property types
+   30/09/2021
+   In Serialize() now it's possible to override attributes of properties declared in a base class
+      example to define a public property in base class as TclJsonPrivate in inherited class:
+        TMyClass = class(TInterfacedObject)
+        public
+          [TclJsonprivate]
+          property RefCount;
+        end;
 }
 
 
@@ -475,6 +483,8 @@ begin
 end;
 
 function TclJsonSerializer.Serialize(AObject: TObject; ARequired: Boolean): TclJSONObject;
+const
+  SEP = '|';
 var
   ctx: TRttiContext;
   rType: TRttiType;
@@ -483,6 +493,7 @@ var
   propAttr: TclJsonPropertyAttribute;
   propOptions: TclJsonPropertyOptions;
   ownPropAttr: Boolean;
+  inheritedProperties: string;
 begin
   if (AObject = nil) then
   begin
@@ -494,6 +505,7 @@ begin
   end;
 
   nonSerializable := True;
+  inheritedProperties := SEP;
 
   ctx := TRttiContext.Create();
   try
@@ -504,6 +516,11 @@ begin
       begin
         if not rProp.IsReadable then
           Continue;
+
+        if Pos(SEP+Lowercase(rProp.Name)+SEP, inheritedProperties) >= Low(string) then
+          Continue;
+
+        inheritedProperties := inheritedProperties + Lowercase(rProp.Name)+SEP;
 
         GetPropertyAttributes(rProp, propAttr, propOptions);
 
