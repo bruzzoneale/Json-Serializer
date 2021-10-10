@@ -43,6 +43,9 @@
           [TclJsonprivate]
           property RefCount;
         end;
+   03/10/2021
+   Added serialization for interface type properties. IclJsonSerializableObject interface must be implemented.
+   In deserialization property cannot be NIL if json value is not null
 }
 
 
@@ -87,6 +90,12 @@ type
     function JsonToObject(AObject: TObject; const AJson: string): TObject; overload; override;
     function ObjectToJson(AObject: TObject): string; override;
   end;
+
+  IclJsonSerializableObject = interface
+    ['{257BBD87-9A99-4FC0-882E-598926FCF033}']
+    function GetObject: TObject;
+  end;
+
 
 resourcestring
   cUnsupportedDataType = 'Unsupported data type';
@@ -319,6 +328,7 @@ var
   propAttr: TclJsonPropertyAttribute;
   propOptions: TclJsonPropertyOptions;
   ownPropAttr: Boolean;
+  intfSer: IclJsonSerializableObject;
 begin
   Result := AObject;
 
@@ -364,6 +374,12 @@ begin
           and (member.Value is TclJSONArray) then
         begin
           DeserializeArray(rProp, Result, TclJSONArray(member.Value));
+        end else
+        if (rProp.PropertyType.TypeKind = tkInterface) and
+            Supports(rProp.GetValue(AObject).AsInterface, IclJsonSerializableObject, intfSer) and
+           (member.Value is TclJSONObject) then
+        begin
+          Deserialize(intfSer.GetObject, TclJSONObject(member.Value));
         end else
         if (rProp.PropertyType.TypeKind = tkClass)
           and (member.Value is TclJSONObject) then
@@ -494,6 +510,7 @@ var
   propOptions: TclJsonPropertyOptions;
   ownPropAttr: Boolean;
   inheritedProperties: string;
+  intfSer: IclJsonSerializableObject;
 begin
   if (AObject = nil) then
   begin
@@ -547,6 +564,17 @@ begin
           if (rProp.PropertyType.TypeKind = tkDynArray) then
           begin
             SerializeArray(rProp, AObject, TclJsonPropertyAttribute(propAttr), Result, (clRequired in propOptions));
+          end else
+          if (rProp.PropertyType.TypeKind = tkInterface) and
+             (rProp.GetValue(AObject).AsInterface = nil) then
+          begin
+            if (clRequired in propOptions) then
+              Result.AddMember(TclJsonPropertyAttribute(propAttr).Name, TclJSONObject.Create());
+          end else
+          if (rProp.PropertyType.TypeKind = tkInterface) and
+             Supports(rProp.GetValue(AObject).AsInterface, IclJsonSerializableObject, intfSer) then
+          begin
+            Result.AddMember(TclJsonPropertyAttribute(propAttr).Name, Serialize(intfSer.GetObject, (clRequired in propOptions)));
           end else
           if (rProp.PropertyType.TypeKind = tkClass) then
           begin
